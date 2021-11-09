@@ -933,22 +933,12 @@ checksum = "7a81dae078cea95a014a339291cec439d2f232ebe854a9d672b796c6afafa9b7"
 
 [[package]]
 name = "crypto-mac"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4434400df11d95d556bac068ddfedd482915eb18fe8bea89bc80b6e4b1c179e5"
-dependencies = [
- "generic-array 0.12.3",
- "subtle 1.0.0",
-]
-
-[[package]]
-name = "crypto-mac"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b584a330336237c1eecd3e94266efb216c56ed91225d634cb2991c5f3fd1aeab"
 dependencies = [
  "generic-array 0.14.4",
- "subtle 2.2.2",
+ "subtle",
 ]
 
 [[package]]
@@ -958,7 +948,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "58bcd97a54c7ca5ce2f6eb16f6bede5b0ab5f0055fedc17d2f0b4466e21671ca"
 dependencies = [
  "generic-array 0.14.4",
- "subtle 2.2.2",
+ "subtle",
 ]
 
 [[package]]
@@ -968,7 +958,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "25fab6889090c8133f3deb8f73ba3c65a7f456f66436fc012a1b1e272b1e103e"
 dependencies = [
  "generic-array 0.14.4",
- "subtle 2.2.2",
+ "subtle",
 ]
 
 [[package]]
@@ -1012,7 +1002,7 @@ dependencies = [
  "byteorder",
  "digest 0.8.1",
  "rand_core 0.5.1",
- "subtle 2.2.2",
+ "subtle",
  "zeroize",
 ]
 
@@ -1025,7 +1015,7 @@ dependencies = [
  "byteorder",
  "digest 0.9.0",
  "rand_core 0.5.1",
- "subtle 2.2.2",
+ "subtle",
  "zeroize",
 ]
 
@@ -1199,7 +1189,7 @@ dependencies = [
  "rand 0.7.3",
  "serde",
  "serde_bytes",
- "sha2 0.9.5",
+ "sha2",
  "zeroize",
 ]
 
@@ -1213,7 +1203,7 @@ dependencies = [
  "ed25519-dalek",
  "failure",
  "hmac 0.9.0",
- "sha2 0.9.5",
+ "sha2",
 ]
 
 [[package]]
@@ -1634,6 +1624,7 @@ dependencies = [
  "cfg-if 0.1.10",
  "libc",
  "wasi",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -1794,16 +1785,6 @@ name = "histogram"
 version = "0.6.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12cb882ccb290b8646e554b157ab0b71e64e8d5bef775cd66b6531e52d302669"
-
-[[package]]
-name = "hmac"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5dcb5e64cda4c23119ab41ba960d1e170a774c8e4b9d9e6a9bc18aabf5e59695"
-dependencies = [
- "crypto-mac 0.7.0",
- "digest 0.8.1",
-]
 
 [[package]]
 name = "hmac"
@@ -2416,7 +2397,7 @@ dependencies = [
  "libsecp256k1-gen-genmult",
  "rand 0.7.3",
  "serde",
- "sha2 0.9.5",
+ "sha2",
  "typenum",
 ]
 
@@ -2435,7 +2416,7 @@ dependencies = [
  "libsecp256k1-gen-genmult",
  "rand 0.7.3",
  "serde",
- "sha2 0.9.5",
+ "sha2",
  "typenum",
 ]
 
@@ -2447,7 +2428,7 @@ checksum = "d0f6ab710cec28cef759c5f18671a27dae2a5f952cdaaee1d8e2908cb2478a80"
 dependencies = [
  "crunchy",
  "digest 0.9.0",
- "subtle 2.2.2",
+ "subtle",
 ]
 
 [[package]]
@@ -2833,12 +2814,9 @@ checksum = "9cbca9424c482ee628fa549d9c812e2cd22f1180b9222c9200fdfa6eb31aecb2"
 
 [[package]]
 name = "once_cell"
-version = "1.5.2"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13bd41f508810a131401606d54ac32a467c97172d74ba7662562ebba5ad07fa0"
-dependencies = [
- "parking_lot 0.11.1",
-]
+checksum = "692fcb63b64b1758029e0a96ee63e049ce8c5948587f2f7208df04625e5f6b56"
 
 [[package]]
 name = "opaque-debug"
@@ -3053,16 +3031,6 @@ dependencies = [
  "redox_syscall 0.1.56",
  "smallvec 1.6.1",
  "winapi 0.3.9",
-]
-
-[[package]]
-name = "pbkdf2"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "006c038a43a45995a9670da19e67600114740e8511d4333bf97a56e66a7542d9"
-dependencies = [
- "byteorder",
- "crypto-mac 0.7.0",
 ]
 
 [[package]]
@@ -4175,18 +4143,6 @@ checksum = "2579985fda508104f7587689507983eadd6a6e84dd35d6d115361f530916fa0d"
 
 [[package]]
 name = "sha2"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a256f46ea78a0c0d9ff00077504903ac881a1dafdc20da66545699e7776b3e69"
-dependencies = [
- "block-buffer 0.7.3",
- "digest 0.8.1",
- "fake-simd",
- "opaque-debug 0.2.3",
-]
-
-[[package]]
-name = "sha2"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b362ae5752fd2137731f9fa25fd4d9058af34666ca1966fb969119cc35719f12"
@@ -4533,7 +4489,7 @@ dependencies = [
  "solana-sdk",
  "tempfile",
  "thiserror",
- "tiny-bip39 0.8.0",
+ "tiny-bip39",
  "uriparse",
  "url 2.2.2",
 ]
@@ -4582,7 +4538,7 @@ dependencies = [
  "spl-memo",
  "tempfile",
  "thiserror",
- "tiny-bip39 0.7.3",
+ "tiny-bip39",
  "url 2.2.2",
 ]
 
@@ -4878,7 +4834,7 @@ dependencies = [
  "rustc_version 0.2.3",
  "serde",
  "serde_derive",
- "sha2 0.9.5",
+ "sha2",
  "solana-frozen-abi-macro 1.7.6",
  "solana-logger 1.7.6",
  "thiserror",
@@ -4896,7 +4852,7 @@ dependencies = [
  "rustc_version 0.4.0",
  "serde",
  "serde_derive",
- "sha2 0.9.5",
+ "sha2",
  "solana-frozen-abi-macro 1.8.0",
  "solana-logger 1.8.0",
  "thiserror",
@@ -5045,7 +5001,7 @@ dependencies = [
  "solana-remote-wallet",
  "solana-sdk",
  "solana-version",
- "tiny-bip39 0.7.3",
+ "tiny-bip39",
 ]
 
 [[package]]
@@ -5077,7 +5033,7 @@ dependencies = [
  "rustc_version 0.4.0",
  "serde",
  "serde_bytes",
- "sha2 0.9.5",
+ "sha2",
  "solana-account-decoder",
  "solana-bpf-loader-program",
  "solana-entry",
@@ -5396,7 +5352,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "serde_derive",
- "sha2 0.9.5",
+ "sha2",
  "sha3",
  "solana-frozen-abi 1.7.6",
  "solana-frozen-abi-macro 1.7.6",
@@ -5431,7 +5387,7 @@ dependencies = [
  "serde_bytes",
  "serde_derive",
  "serde_json",
- "sha2 0.9.5",
+ "sha2",
  "sha3",
  "solana-frozen-abi 1.8.0",
  "solana-frozen-abi-macro 1.8.0",
@@ -5680,7 +5636,7 @@ dependencies = [
  "serde_bytes",
  "serde_derive",
  "serde_json",
- "sha2 0.9.5",
+ "sha2",
  "sha3",
  "solana-crate-features",
  "solana-frozen-abi 1.8.0",
@@ -5689,7 +5645,7 @@ dependencies = [
  "solana-program 1.8.0",
  "solana-sdk-macro 1.8.0",
  "thiserror",
- "tiny-bip39 0.7.3",
+ "tiny-bip39",
  "uriparse",
 ]
 
@@ -6155,12 +6111,6 @@ checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
 name = "subtle"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d67a5a62ba6e01cb2192ff309324cb4875d0c451d55fe2319433abe7a05a8ee"
-
-[[package]]
-name = "subtle"
 version = "2.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c65d530b10ccaeac294f349038a597e435b18fb456aadd0840a623f83b9e941"
@@ -6439,25 +6389,9 @@ dependencies = [
 
 [[package]]
 name = "tiny-bip39"
-version = "0.7.3"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0165e045cc2ae1660270ca65e1676dbaab60feb0f91b10f7d0665e9b47e31f2"
-dependencies = [
- "failure",
- "hmac 0.7.1",
- "once_cell",
- "pbkdf2 0.3.0",
- "rand 0.7.3",
- "rustc-hash",
- "sha2 0.8.2",
- "unicode-normalization",
-]
-
-[[package]]
-name = "tiny-bip39"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9e44c4759bae7f1032e286a7ef990bd9ed23fe831b7eeba0beb97484c2e59b8"
+checksum = "ffc59cb9dfc85bb312c3a78fd6aa8a8582e310b0fa885d5bb877f6dcc601839d"
 dependencies = [
  "anyhow",
  "hmac 0.8.1",
@@ -6465,9 +6399,10 @@ dependencies = [
  "pbkdf2 0.4.0",
  "rand 0.7.3",
  "rustc-hash",
- "sha2 0.9.5",
+ "sha2",
  "thiserror",
  "unicode-normalization",
+ "wasm-bindgen",
  "zeroize",
 ]
 
