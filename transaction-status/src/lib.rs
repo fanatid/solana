@@ -233,7 +233,7 @@ impl From<InnerInstructions> for UiInnerInstructions {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TransactionTokenBalance {
     pub account_index: u8,
     pub mint: String,
@@ -266,7 +266,7 @@ impl From<TransactionTokenBalance> for UiTransactionTokenBalance {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TransactionStatusMeta {
     pub status: TransactionResult<()>,
     pub fee: u64,
@@ -465,7 +465,7 @@ pub struct Reward {
 
 pub type Rewards = Vec<Reward>;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConfirmedBlock {
     pub previous_blockhash: String,
     pub blockhash: String,
@@ -595,7 +595,7 @@ pub struct UiConfirmedBlock {
     pub block_height: Option<u64>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum TransactionWithStatusMeta {
     // Very old transactions may be missing metadata
@@ -604,7 +604,7 @@ pub enum TransactionWithStatusMeta {
     Complete(VersionedTransactionWithStatusMeta),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct VersionedTransactionWithStatusMeta {
     pub transaction: VersionedTransaction,
     pub meta: TransactionStatusMeta,
@@ -714,7 +714,7 @@ pub struct EncodedTransactionWithStatusMeta {
     pub version: Option<TransactionVersion>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ConfirmedTransactionWithStatusMeta {
     pub slot: Slot,
     pub tx_with_meta: TransactionWithStatusMeta,
