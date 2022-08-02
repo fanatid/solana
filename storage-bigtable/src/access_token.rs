@@ -94,21 +94,27 @@ impl AccessToken {
     pub async fn refresh(&self) {
         // Check if it's time to try a token refresh
         {
+            warn!("BigTableAccessToken: trying to read");
             let token_r = self.token.read().unwrap();
             if token_r.1.elapsed().as_secs() < token_r.0.expires_in() as u64 / 2 {
+                warn!("BigTableAccessToken: not expired yet, exit");
                 return;
             }
 
+            warn!("BigTableAccessToken: check for current update");
             #[allow(deprecated)]
             if self
                 .refresh_active
-                .compare_and_swap(false, true, Ordering::Relaxed)
+                .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
             {
+                warn!("BigTableAccessToken: update already in process, exit");
                 // Refresh already pending
                 return;
             }
         }
 
+        warn!("BigTableAccessToken: ask about new token");
         info!("Refreshing token");
         match time::timeout(
             time::Duration::from_secs(5),
@@ -116,16 +122,37 @@ impl AccessToken {
         )
         .await
         {
-            Ok(new_token) => match (new_token, self.token.write()) {
-                (Ok(new_token), Ok(mut token_w)) => *token_w = new_token,
-                (Ok(_new_token), Err(err)) => warn!("{}", err),
-                (Err(err), _) => warn!("{}", err),
-            },
+            Ok(new_token) => {
+                warn!(
+                    "BigTableAccessToken: new token received, OK? {}",
+                    new_token.is_ok()
+                );
+                match (new_token, self.token.write()) {
+                    (Ok(new_token), Ok(mut token_w)) => {
+                        warn!("BigTableAccessToken: new token received, token lock acquired");
+                        *token_w = new_token
+                    }
+                    (Ok(_new_token), Err(err)) => {
+                        warn!("BigTableAccessToken: failed to acquire token lock");
+                        warn!("{}", err)
+                    }
+                    (Err(err), _) => {
+                        warn!("BigTableAccessToken: timeout error");
+                        warn!("{}", err)
+                    }
+                }
+            }
             Err(_) => {
+                warn!("BigTableAccessToken: new token timeout");
                 warn!("Token refresh timeout")
             }
         }
+        warn!("BigTableAccessToken: token updated");
         self.refresh_active.store(false, Ordering::Relaxed);
+        warn!(
+            "BigTableAccessToken: pending flag deactivated, current value: {}",
+            self.refresh_access.load(Ordering::Relaxed)
+        );
     }
 
     /// Return an access token suitable for use in an HTTP authorization header
