@@ -703,34 +703,35 @@ impl LedgerStorage {
             }
         }
 
-        // Fetch blocks
-        *requests_count += 1;
-        let keys = blocks_map.keys().copied().collect::<Vec<_>>();
-        let cells = self.get_confirmed_blocks_with_data(&keys).await?;
-
         // Collect response data
         let mut blocks_resp = vec![];
         let mut transactions_resp = vec![];
 
-        for (slot, block) in cells {
-            if let Some(entries) = blocks_map.get(&slot) {
-                for (index, signature) in entries.iter() {
-                    if let Some(tx_with_meta) = block.transactions.get(*index as usize) {
-                        if tx_with_meta.transaction_signature().to_string() != *signature {
-                            warn!(
-                                "Transaction info or confirmed block for {} is corrupt",
-                                signature
-                            );
-                        } else {
-                            transactions_resp.push(ConfirmedTransactionWithStatusMeta {
-                                slot,
-                                tx_with_meta: tx_with_meta.clone(),
-                                block_time: block.block_time,
-                            });
+        // Fetch blocks
+        if !blocks_map.is_empty() {
+            *requests_count += 1;
+            let keys = blocks_map.keys().copied().collect::<Vec<_>>();
+            let cells = self.get_confirmed_blocks_with_data(&keys).await?;
+            for (slot, block) in cells {
+                if let Some(entries) = blocks_map.get(&slot) {
+                    for (index, signature) in entries.iter() {
+                        if let Some(tx_with_meta) = block.transactions.get(*index as usize) {
+                            if tx_with_meta.transaction_signature().to_string() != *signature {
+                                warn!(
+                                    "Transaction info or confirmed block for {} is corrupt",
+                                    signature
+                                );
+                            } else {
+                                transactions_resp.push(ConfirmedTransactionWithStatusMeta {
+                                    slot,
+                                    tx_with_meta: tx_with_meta.clone(),
+                                    block_time: block.block_time,
+                                });
+                            }
                         }
                     }
+                    blocks_resp.push((slot, block));
                 }
-                blocks_resp.push((slot, block));
             }
         }
 
