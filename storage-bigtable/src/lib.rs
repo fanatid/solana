@@ -2,6 +2,7 @@
 
 use {
     crate::bigtable::RowKey,
+    hyper::client::connect::HttpConnector,
     log::*,
     serde::{Deserialize, Serialize},
     solana_metrics::{datapoint_info, inc_new_counter_debug},
@@ -59,6 +60,9 @@ pub enum Error {
 
     #[error("tokio error")]
     TokioJoinError(JoinError),
+
+    #[error("Invalid URI {0}: {1}")]
+    InvalidUri(String, String),
 }
 
 impl std::convert::From<bigtable::Error> for Error {
@@ -378,15 +382,16 @@ pub enum CredentialType {
 }
 
 #[derive(Debug)]
-pub struct LedgerStorageConfig {
+pub struct LedgerStorageConfig<C = HttpConnector> {
     pub read_only: bool,
     pub timeout: Option<std::time::Duration>,
     pub credential_type: CredentialType,
     pub instance_name: String,
     pub app_profile_id: String,
+    pub connector: Option<C>,
 }
 
-impl Default for LedgerStorageConfig {
+impl Default for LedgerStorageConfig<HttpConnector> {
     fn default() -> Self {
         Self {
             read_only: true,
@@ -394,7 +399,36 @@ impl Default for LedgerStorageConfig {
             credential_type: CredentialType::Filepath(None),
             instance_name: DEFAULT_INSTANCE_NAME.to_string(),
             app_profile_id: DEFAULT_APP_PROFILE_ID.to_string(),
+            connector: None,
         }
+    }
+}
+
+impl LedgerStorageConfig<hyper_proxy::ProxyConnector<HttpConnector>> {
+    pub fn with_proxy_connector(&mut self, proxy_uri: Option<String>) -> Result<()> {
+        let proxy_uri = match (proxy_uri, std::env::var("BIGTABLE_PROXY")) {
+            (Some(proxy_uri), _) => proxy_uri,
+            (None, Ok(proxy_uri)) => proxy_uri,
+            (None, Err(err)) => return Err(Error::InvalidUri("".to_string(), err.to_string())),
+        };
+
+        let proxy = hyper_proxy::Proxy::new(
+            hyper_proxy::Intercept::All,
+            proxy_uri
+                .parse::<http::Uri>()
+                .map_err(|err| Error::InvalidUri(proxy_uri, err.to_string()))?,
+        );
+
+        let mut http = HttpConnector::new();
+        http.enforce_http(false);
+        http.set_nodelay(true);
+ 
+        let mut proxy_connector = hyper_proxy::ProxyConnector::from_proxy(http, proxy)?;
+        // tonic handles TLS as a separate layer
+        proxy_connector.set_tls(None);
+        self.connector = Some(proxy_connector);
+
+        Ok(())
     }
 }
 
@@ -418,20 +452,28 @@ impl LedgerStorage {
         .await
     }
 
-    pub async fn new_with_config(config: LedgerStorageConfig) -> Result<Self> {
+    pub async fn new_with_config<C>(config: LedgerStorageConfig<C>) -> Result<Self>
+    where
+        C: tower::make::MakeConnection<tonic::transport::Uri> + Send + 'static,
+        C::Connection: Unpin + Send + 'static,
+        C::Future: Send + 'static,
+        Box<dyn std::error::Error + Send + Sync>: From<C::Error> + Send + 'static,
+    {
         let LedgerStorageConfig {
             read_only,
             timeout,
             instance_name,
             app_profile_id,
             credential_type,
+            connector,
         } = config;
-        let connection = bigtable::BigTableConnection::new(
+        let connection = bigtable::BigTableConnection::new::<C>(
             instance_name.as_str(),
             app_profile_id.as_str(),
             read_only,
             timeout,
             credential_type,
+            connector,
         )
         .await?;
         Ok(Self { connection })

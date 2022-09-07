@@ -6228,6 +6228,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic 0.8.0",
+ "tower",
  "zstd",
 ]
 
