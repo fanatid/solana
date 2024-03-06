@@ -4,7 +4,7 @@ use {
     solana_sdk::clock::Slot,
     std::sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, RwLock,
+        Arc,
     },
 };
 
@@ -16,7 +16,7 @@ pub enum RpcHealthStatus {
 }
 
 pub struct RpcHealth {
-    optimistically_confirmed_bank: Arc<RwLock<OptimisticallyConfirmedBank>>,
+    optimistically_confirmed_bank: OptimisticallyConfirmedBank,
     blockstore: Arc<Blockstore>,
     health_check_slot_distance: u64,
     override_health_check: Arc<AtomicBool>,
@@ -27,7 +27,7 @@ pub struct RpcHealth {
 
 impl RpcHealth {
     pub fn new(
-        optimistically_confirmed_bank: Arc<RwLock<OptimisticallyConfirmedBank>>,
+        optimistically_confirmed_bank: OptimisticallyConfirmedBank,
         blockstore: Arc<Blockstore>,
         health_check_slot_distance: u64,
         override_health_check: Arc<AtomicBool>,
@@ -76,9 +76,9 @@ impl RpcHealth {
         // tip of the cluster.
         let my_latest_optimistically_confirmed_slot = self
             .optimistically_confirmed_bank
+            .bank
             .read()
             .unwrap()
-            .bank
             .slot();
 
         let mut optimistic_slot_infos = match self.blockstore.get_latest_optimistic_slots(1) {

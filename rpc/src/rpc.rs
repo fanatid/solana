@@ -205,7 +205,7 @@ pub struct JsonRpcRequestProcessor {
     genesis_hash: Hash,
     transaction_sender: Arc<Mutex<Sender<TransactionInfo>>>,
     bigtable_ledger_storage: Option<solana_storage_bigtable::LedgerStorage>,
-    optimistically_confirmed_bank: Arc<RwLock<OptimisticallyConfirmedBank>>,
+    optimistically_confirmed_bank: OptimisticallyConfirmedBank,
     largest_accounts_cache: Arc<RwLock<LargestAccountsCache>>,
     max_slots: Arc<MaxSlots>,
     leader_schedule_cache: Arc<LeaderScheduleCache>,
@@ -250,9 +250,9 @@ impl JsonRpcRequestProcessor {
         if commitment.is_confirmed() {
             let bank = self
                 .optimistically_confirmed_bank
+                .bank
                 .read()
                 .unwrap()
-                .bank
                 .clone();
             debug!("RPC using optimistically confirmed slot: {:?}", bank.slot());
             return bank;
@@ -311,7 +311,7 @@ impl JsonRpcRequestProcessor {
         cluster_info: Arc<ClusterInfo>,
         genesis_hash: Hash,
         bigtable_ledger_storage: Option<solana_storage_bigtable::LedgerStorage>,
-        optimistically_confirmed_bank: Arc<RwLock<OptimisticallyConfirmedBank>>,
+        optimistically_confirmed_bank: OptimisticallyConfirmedBank,
         largest_accounts_cache: Arc<RwLock<LargestAccountsCache>>,
         max_slots: Arc<MaxSlots>,
         leader_schedule_cache: Arc<LeaderScheduleCache>,
@@ -368,9 +368,11 @@ impl JsonRpcRequestProcessor {
             .my_contact_info()
             .tpu(connection_cache.protocol())
             .unwrap();
+        let optimistically_confirmed_bank = OptimisticallyConfirmedBank::new(bank.clone());
         let (sender, receiver) = unbounded();
         SendTransactionService::new::<NullTpuInfo>(
             tpu_address,
+            optimistically_confirmed_bank.bank.clone(),
             &bank_forks,
             None,
             receiver,
@@ -383,8 +385,6 @@ impl JsonRpcRequestProcessor {
         let leader_schedule_cache = Arc::new(LeaderScheduleCache::new_from_bank(&bank));
         let startup_verification_complete = Arc::clone(bank.get_startup_verification_complete());
         let slot = bank.slot();
-        let optimistically_confirmed_bank =
-            Arc::new(RwLock::new(OptimisticallyConfirmedBank { bank }));
         Self {
             config: JsonRpcConfig::default(),
             snapshot_config: None,
@@ -397,7 +397,7 @@ impl JsonRpcRequestProcessor {
             blockstore: Arc::clone(&blockstore),
             validator_exit: create_validator_exit(exit.clone()),
             health: Arc::new(RpcHealth::new(
-                Arc::clone(&optimistically_confirmed_bank),
+                optimistically_confirmed_bank.clone(),
                 blockstore,
                 0,
                 exit,

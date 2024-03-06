@@ -1489,6 +1489,16 @@ pub fn main() {
                 usize
             ),
             tpu_peers: rpc_send_transaction_tpu_peers,
+            send_before_commitment: value_t_or_exit!(
+                matches,
+                "rpc_send_transaction_before_commitment",
+                CommitmentConfig
+            ),
+            rooted_at_commitment: value_t_or_exit!(
+                matches,
+                "rpc_send_transaction_rooted_at_commitment",
+                CommitmentConfig
+            ),
         },
         no_poh_speed_test: matches.is_present("no_poh_speed_test"),
         no_os_memory_stats_reporting: matches.is_present("no_os_memory_stats_reporting"),

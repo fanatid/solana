@@ -453,7 +453,7 @@ fn initial_last_notified_slot(
     params: &SubscriptionParams,
     bank_forks: &RwLock<BankForks>,
     block_commitment_cache: &RwLock<BlockCommitmentCache>,
-    optimistically_confirmed_bank: &RwLock<OptimisticallyConfirmedBank>,
+    optimistically_confirmed_bank: &OptimisticallyConfirmedBank,
 ) -> Option<Slot> {
     match params {
         SubscriptionParams::Account(params) => {
@@ -463,7 +463,7 @@ fn initial_last_notified_slot(
                     .unwrap()
                     .highest_super_majority_root()
             } else if params.commitment.is_confirmed() {
-                optimistically_confirmed_bank.read().unwrap().bank.slot()
+                optimistically_confirmed_bank.bank.read().unwrap().slot()
             } else {
                 block_commitment_cache.read().unwrap().slot()
             };
@@ -533,7 +533,7 @@ impl RpcSubscriptions {
         blockstore: Arc<Blockstore>,
         bank_forks: Arc<RwLock<BankForks>>,
         block_commitment_cache: Arc<RwLock<BlockCommitmentCache>>,
-        optimistically_confirmed_bank: Arc<RwLock<OptimisticallyConfirmedBank>>,
+        optimistically_confirmed_bank: OptimisticallyConfirmedBank,
     ) -> Self {
         Self::new_with_config(
             exit,
@@ -554,7 +554,7 @@ impl RpcSubscriptions {
         max_complete_rewards_slot: Arc<AtomicU64>,
         bank_forks: Arc<RwLock<BankForks>>,
         block_commitment_cache: Arc<RwLock<BlockCommitmentCache>>,
-        optimistically_confirmed_bank: Arc<RwLock<OptimisticallyConfirmedBank>>,
+        optimistically_confirmed_bank: OptimisticallyConfirmedBank,
     ) -> Self {
         let ledger_path = get_tmp_ledger_path!();
         let blockstore = Blockstore::open(&ledger_path).unwrap();
@@ -578,7 +578,7 @@ impl RpcSubscriptions {
         blockstore: Arc<Blockstore>,
         bank_forks: Arc<RwLock<BankForks>>,
         block_commitment_cache: Arc<RwLock<BlockCommitmentCache>>,
-        optimistically_confirmed_bank: Arc<RwLock<OptimisticallyConfirmedBank>>,
+        optimistically_confirmed_bank: OptimisticallyConfirmedBank,
     ) -> Self {
         let rpc_notifier_ready = Arc::new(AtomicBool::new(false));
 
@@ -614,7 +614,7 @@ impl RpcSubscriptions {
         blockstore: Arc<Blockstore>,
         bank_forks: Arc<RwLock<BankForks>>,
         block_commitment_cache: Arc<RwLock<BlockCommitmentCache>>,
-        optimistically_confirmed_bank: Arc<RwLock<OptimisticallyConfirmedBank>>,
+        optimistically_confirmed_bank: OptimisticallyConfirmedBank,
         config: &PubSubConfig,
         rpc_notifier_ready: Option<Arc<AtomicBool>>,
     ) -> Self {
@@ -772,7 +772,7 @@ impl RpcSubscriptions {
         mut subscriptions: SubscriptionsTracker,
         bank_forks: Arc<RwLock<BankForks>>,
         block_commitment_cache: Arc<RwLock<BlockCommitmentCache>>,
-        optimistically_confirmed_bank: Arc<RwLock<OptimisticallyConfirmedBank>>,
+        optimistically_confirmed_bank: OptimisticallyConfirmedBank,
     ) {
         let mut stats = PubsubNotificationStats::default();
 

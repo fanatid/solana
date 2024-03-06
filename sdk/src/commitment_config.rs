@@ -112,6 +112,16 @@ impl FromStr for CommitmentLevel {
     }
 }
 
+impl AsRef<str> for CommitmentLevel {
+    fn as_ref(&self) -> &str {
+        match self {
+            CommitmentLevel::Processed => "processed",
+            CommitmentLevel::Confirmed => "confirmed",
+            CommitmentLevel::Finalized => "finalized",
+        }
+    }
+}
+
 impl std::fmt::Display for CommitmentLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         let s = match self {

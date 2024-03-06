@@ -347,7 +347,7 @@ impl JsonRpcService {
         exit: Arc<AtomicBool>,
         override_health_check: Arc<AtomicBool>,
         startup_verification_complete: Arc<AtomicBool>,
-        optimistically_confirmed_bank: Arc<RwLock<OptimisticallyConfirmedBank>>,
+        optimistically_confirmed_bank: OptimisticallyConfirmedBank,
         send_transaction_service_config: send_transaction_service::Config,
         max_slots: Arc<MaxSlots>,
         leader_schedule_cache: Arc<LeaderScheduleCache>,
@@ -362,7 +362,7 @@ impl JsonRpcService {
         let rpc_niceness_adj = config.rpc_niceness_adj;
 
         let health = Arc::new(RpcHealth::new(
-            Arc::clone(&optimistically_confirmed_bank),
+            optimistically_confirmed_bank.clone(),
             Arc::clone(&blockstore),
             config.health_check_slot_distance,
             override_health_check,
@@ -463,7 +463,7 @@ impl JsonRpcService {
             cluster_info.clone(),
             genesis_hash,
             bigtable_ledger_storage,
-            optimistically_confirmed_bank,
+            optimistically_confirmed_bank.clone(),
             largest_accounts_cache,
             max_slots,
             leader_schedule_cache,
@@ -476,6 +476,7 @@ impl JsonRpcService {
             poh_recorder.map(|recorder| ClusterTpuInfo::new(cluster_info.clone(), recorder));
         let _send_transaction_service = Arc::new(SendTransactionService::new_with_config(
             tpu_address,
+            optimistically_confirmed_bank.bank,
             &bank_forks,
             leader_info,
             receiver,

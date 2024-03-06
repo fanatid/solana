@@ -7,8 +7,9 @@ use {
     solana_measure::measure::Measure,
     solana_runtime::{bank::Bank, bank_forks::BankForks},
     solana_sdk::{
-        clock::Slot, hash::Hash, nonce_account, pubkey::Pubkey, saturating_add_assign,
-        signature::Signature, timing::AtomicInterval, transport::TransportError,
+        clock::Slot, commitment_config::CommitmentConfig, hash::Hash, nonce_account,
+        pubkey::Pubkey, saturating_add_assign, signature::Signature, timing::AtomicInterval,
+        transport::TransportError,
     },
     std::{
         collections::{
@@ -18,7 +19,7 @@ use {
         net::SocketAddr,
         sync::{
             atomic::{AtomicBool, AtomicU64, Ordering},
-            Arc, Mutex, RwLock,
+            Arc, Mutex, RwLock, RwLockReadGuard,
         },
         thread::{self, sleep, Builder, JoinHandle},
         time::{Duration, Instant},
@@ -114,6 +115,10 @@ pub struct Config {
     /// When the retry pool exceeds this max size, new transactions are dropped after their first broadcast attempt
     pub retry_pool_max_size: usize,
     pub tpu_peers: Option<Vec<SocketAddr>>,
+    /// Send transaction while it not shown in commitment
+    pub send_before_commitment: CommitmentConfig,
+    /// When transaction removed from retry pool
+    pub rooted_at_commitment: CommitmentConfig,
 }
 
 impl Default for Config {
@@ -127,6 +132,8 @@ impl Default for Config {
             batch_send_rate_ms: DEFAULT_BATCH_SEND_RATE_MS,
             retry_pool_max_size: MAX_TRANSACTION_RETRY_POOL_SIZE,
             tpu_peers: None,
+            send_before_commitment: CommitmentConfig::processed(),
+            rooted_at_commitment: CommitmentConfig::finalized(),
         }
     }
 }
@@ -331,6 +338,7 @@ const SEND_TRANSACTION_METRICS_REPORT_RATE_MS: u64 = 5000;
 impl SendTransactionService {
     pub fn new<T: TpuInfo + std::marker::Send + 'static>(
         tpu_address: SocketAddr,
+        optimistically_confirmed_bank: Arc<RwLock<Arc<Bank>>>,
         bank_forks: &Arc<RwLock<BankForks>>,
         leader_info: Option<T>,
         receiver: Receiver<TransactionInfo>,
@@ -346,6 +354,7 @@ impl SendTransactionService {
         };
         Self::new_with_config(
             tpu_address,
+            optimistically_confirmed_bank,
             bank_forks,
             leader_info,
             receiver,
@@ -357,6 +366,7 @@ impl SendTransactionService {
 
     pub fn new_with_config<T: TpuInfo + std::marker::Send + 'static>(
         tpu_address: SocketAddr,
+        optimistically_confirmed_bank: Arc<RwLock<Arc<Bank>>>,
         bank_forks: &Arc<RwLock<BankForks>>,
         leader_info: Option<T>,
         receiver: Receiver<TransactionInfo>,
@@ -383,6 +393,7 @@ impl SendTransactionService {
 
         let retry_thread = Self::retry_thread(
             tpu_address,
+            optimistically_confirmed_bank,
             bank_forks.clone(),
             leader_info_provider,
             connection_cache.clone(),
@@ -504,9 +515,26 @@ impl SendTransactionService {
             .unwrap()
     }
 
+    fn get_bank_by_commitment(
+        optimistically_confirmed_bank: &Arc<RwLock<Arc<Bank>>>,
+        bank_forks: &RwLockReadGuard<BankForks>,
+        commitment: CommitmentConfig,
+    ) -> Arc<Bank> {
+        if commitment.is_processed() {
+            bank_forks.working_bank()
+        } else if commitment.is_confirmed() {
+            optimistically_confirmed_bank.read().unwrap().clone()
+        } else if commitment.is_finalized() {
+            bank_forks.root_bank()
+        } else {
+            unreachable!("unknown commitment {commitment:?}")
+        }
+    }
+
     /// Thread responsible for retrying transactions
     fn retry_thread<T: TpuInfo + std::marker::Send + 'static>(
         tpu_address: SocketAddr,
+        optimistically_confirmed_bank: Arc<RwLock<Arc<Bank>>>,
         bank_forks: Arc<RwLock<BankForks>>,
         leader_info_provider: Arc<Mutex<CurrentLeaderInfo<T>>>,
         connection_cache: Arc<ConnectionCache>,
@@ -535,13 +563,27 @@ impl SendTransactionService {
                     stats
                         .retry_queue_size
                         .store(transactions.len() as u64, Ordering::Relaxed);
-                    let (root_bank, working_bank) = {
+                    let (root_bank, landed_bank, working_bank) = {
                         let bank_forks = bank_forks.read().unwrap();
-                        (bank_forks.root_bank(), bank_forks.working_bank())
+                        // (bank_forks.root_bank(), bank_forks.working_bank())
+                        (
+                            bank_forks.root_bank(),
+                            Self::get_bank_by_commitment(
+                                &optimistically_confirmed_bank,
+                                &bank_forks,
+                                config.rooted_at_commitment,
+                            ),
+                            Self::get_bank_by_commitment(
+                                &optimistically_confirmed_bank,
+                                &bank_forks,
+                                config.send_before_commitment,
+                            ),
+                        )
                     };
 
                     let _result = Self::process_transactions(
                         &working_bank,
+                        &landed_bank,
                         &root_bank,
                         &tpu_address,
                         &mut transactions,
@@ -598,6 +640,7 @@ impl SendTransactionService {
     /// Retry transactions sent before.
     fn process_transactions<T: TpuInfo + std::marker::Send + 'static>(
         working_bank: &Bank,
+        landed_bank: &Bank,
         root_bank: &Bank,
         tpu_address: &SocketAddr,
         transactions: &mut HashMap<Signature, TransactionInfo>,
@@ -615,7 +658,7 @@ impl SendTransactionService {
             if transaction_info.durable_nonce_info.is_some() {
                 stats.nonced_transactions.fetch_add(1, Ordering::Relaxed);
             }
-            if root_bank.has_signature(signature) {
+            if landed_bank.has_signature(signature) {
                 info!("Transaction is rooted: {}", signature);
                 result.rooted += 1;
                 stats.rooted_transactions.fetch_add(1, Ordering::Relaxed);

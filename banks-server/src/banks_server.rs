@@ -8,6 +8,7 @@ use {
         TransactionSimulationDetails, TransactionStatus,
     },
     solana_client::connection_cache::ConnectionCache,
+    solana_rpc::optimistically_confirmed_bank_tracker::OptimisticallyConfirmedBank,
     solana_runtime::{
         bank::{Bank, TransactionSimulationResult},
         bank_forks::BankForks,
@@ -451,6 +452,7 @@ pub async fn start_tcp_server(
 
             SendTransactionService::new::<NullTpuInfo>(
                 tpu_addr,
+                OptimisticallyConfirmedBank::locked_from_bank_forks_root(&bank_forks).bank,
                 &bank_forks,
                 None,
                 receiver,

@@ -41,8 +41,8 @@ use {
         },
     },
     solana_sdk::{
-        clock::Slot, epoch_schedule::MINIMUM_SLOTS_PER_EPOCH, hash::Hash, quic::QUIC_PORT_OFFSET,
-        rpc_port,
+        clock::Slot, commitment_config::CommitmentLevel, epoch_schedule::MINIMUM_SLOTS_PER_EPOCH,
+        hash::Hash, quic::QUIC_PORT_OFFSET, rpc_port,
     },
     solana_send_transaction_service::send_transaction_service::{
         self, MAX_BATCH_SEND_RATE_MS, MAX_TRANSACTION_BATCH_SIZE,
@@ -1156,6 +1156,22 @@ pub fn app<'a>(version: &'a str, default_args: &'a DefaultArgs) -> App<'a, 'a> {
                 .long("rpc-send-transaction-also-leader")
                 .requires("rpc_send_transaction_tpu_peer")
                 .help("With `--rpc-send-transaction-tpu-peer HOST:PORT`, also send to the current leader")
+        )
+        .arg(
+            Arg::with_name("rpc_send_transaction_before_commitment")
+                .long("rpc-send-transaction-before-commitment")
+                .takes_value(true)
+                .possible_values(&[CommitmentLevel::Processed.as_ref(), CommitmentLevel::Confirmed.as_ref(), CommitmentLevel::Finalized.as_ref()])
+                .default_value(&CommitmentLevel::Processed.as_ref())
+                .help("Stop send transaction when it shows at slot with defined commitment level.")
+        )
+        .arg(
+            Arg::with_name("rpc_send_transaction_rooted_at_commitment")
+                .long("rpc-send-transaction-rooted-at-commitment")
+                .takes_value(true)
+                .possible_values(&[CommitmentLevel::Processed.as_ref(), CommitmentLevel::Confirmed.as_ref(), CommitmentLevel::Finalized.as_ref()])
+                .default_value(&CommitmentLevel::Finalized.as_ref())
+                .help("Commitment level when transaction removed from retry thread.")
         )
         .arg(
             Arg::with_name("rpc_scan_and_fix_roots")

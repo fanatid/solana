@@ -27,15 +27,21 @@ use {
     },
 };
 
+#[derive(Clone)]
 pub struct OptimisticallyConfirmedBank {
-    pub bank: Arc<Bank>,
+    pub bank: Arc<RwLock<Arc<Bank>>>,
 }
 
 impl OptimisticallyConfirmedBank {
-    pub fn locked_from_bank_forks_root(bank_forks: &Arc<RwLock<BankForks>>) -> Arc<RwLock<Self>> {
-        Arc::new(RwLock::new(Self {
-            bank: bank_forks.read().unwrap().root_bank(),
-        }))
+    pub fn locked_from_bank_forks_root(bank_forks: &Arc<RwLock<BankForks>>) -> Self {
+        let bank = bank_forks.read().unwrap().root_bank();
+        Self::new(bank)
+    }
+
+    pub fn new(bank: Arc<Bank>) -> Self {
+        Self {
+            bank: Arc::new(RwLock::new(bank)),
+        }
     }
 }
 
@@ -91,7 +97,7 @@ impl OptimisticallyConfirmedBankTracker {
         receiver: BankNotificationReceiver,
         exit: Arc<AtomicBool>,
         bank_forks: Arc<RwLock<BankForks>>,
-        optimistically_confirmed_bank: Arc<RwLock<OptimisticallyConfirmedBank>>,
+        optimistically_confirmed_bank: OptimisticallyConfirmedBank,
         subscriptions: Arc<RpcSubscriptions>,
         slot_notification_subscribers: Option<Arc<RwLock<Vec<SlotNotificationSender>>>>,
         prioritization_fee_cache: Arc<PrioritizationFeeCache>,
@@ -130,7 +136,7 @@ impl OptimisticallyConfirmedBankTracker {
     fn recv_notification(
         receiver: &Receiver<BankNotification>,
         bank_forks: &RwLock<BankForks>,
-        optimistically_confirmed_bank: &RwLock<OptimisticallyConfirmedBank>,
+        optimistically_confirmed_bank: &OptimisticallyConfirmedBank,
         subscriptions: &RpcSubscriptions,
         pending_optimistically_confirmed_banks: &mut HashSet<Slot>,
         last_notified_confirmed_slot: &mut Slot,
@@ -266,7 +272,7 @@ impl OptimisticallyConfirmedBankTracker {
     pub fn process_notification(
         notification: BankNotification,
         bank_forks: &RwLock<BankForks>,
-        optimistically_confirmed_bank: &RwLock<OptimisticallyConfirmedBank>,
+        optimistically_confirmed_bank: &OptimisticallyConfirmedBank,
         subscriptions: &RpcSubscriptions,
         pending_optimistically_confirmed_banks: &mut HashSet<Slot>,
         last_notified_confirmed_slot: &mut Slot,
@@ -281,11 +287,10 @@ impl OptimisticallyConfirmedBankTracker {
                 let bank = bank_forks.read().unwrap().get(slot);
                 if let Some(bank) = bank {
                     let mut w_optimistically_confirmed_bank =
-                        optimistically_confirmed_bank.write().unwrap();
+                        optimistically_confirmed_bank.bank.write().unwrap();
 
-                    if bank.slot() > w_optimistically_confirmed_bank.bank.slot() && bank.is_frozen()
-                    {
-                        w_optimistically_confirmed_bank.bank = bank.clone();
+                    if bank.slot() > w_optimistically_confirmed_bank.slot() && bank.is_frozen() {
+                        *w_optimistically_confirmed_bank = bank.clone();
                     }
 
                     if slot > *highest_confirmed_slot {
@@ -359,9 +364,9 @@ impl OptimisticallyConfirmedBankTracker {
                     );
 
                     let mut w_optimistically_confirmed_bank =
-                        optimistically_confirmed_bank.write().unwrap();
-                    if frozen_slot > w_optimistically_confirmed_bank.bank.slot() {
-                        w_optimistically_confirmed_bank.bank = bank;
+                        optimistically_confirmed_bank.bank.write().unwrap();
+                    if frozen_slot > w_optimistically_confirmed_bank.slot() {
+                        *w_optimistically_confirmed_bank = bank;
                     }
                     drop(w_optimistically_confirmed_bank);
                 }
@@ -369,9 +374,9 @@ impl OptimisticallyConfirmedBankTracker {
             BankNotification::NewRootBank(bank) => {
                 let root_slot = bank.slot();
                 let mut w_optimistically_confirmed_bank =
-                    optimistically_confirmed_bank.write().unwrap();
-                if root_slot > w_optimistically_confirmed_bank.bank.slot() {
-                    w_optimistically_confirmed_bank.bank = bank;
+                    optimistically_confirmed_bank.bank.write().unwrap();
+                if root_slot > w_optimistically_confirmed_bank.slot() {
+                    *w_optimistically_confirmed_bank = bank;
                 }
                 drop(w_optimistically_confirmed_bank);
 
