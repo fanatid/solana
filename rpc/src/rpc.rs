@@ -62,7 +62,7 @@ use {
     solana_sdk::{
         account::{AccountSharedData, ReadableAccount},
         account_utils::StateMut,
-        clock::{Slot, UnixTimestamp, MAX_PROCESSING_AGE},
+        clock::{Slot, UnixTimestamp, MAX_PROCESSING_AGE, MAX_RECENT_BLOCKHASHES},
         commitment_config::{CommitmentConfig, CommitmentLevel},
         epoch_info::EpochInfo,
         epoch_rewards_hasher::EpochRewardsHasher,
@@ -2274,14 +2274,22 @@ impl JsonRpcRequestProcessor {
         config: RpcLatestBlockhashConfig,
     ) -> Result<RpcResponse<RpcBlockhash>> {
         let mut bank = self.get_bank_with_config(config.context)?;
-        if config.rollback > 300 {
+        if config.rollback > MAX_RECENT_BLOCKHASHES {
             return Err(Error::invalid_params("rollback exceeds 300"));
         }
-        for _ in 0..config.rollback {
-            bank = match bank.parent() {
-                Some(bank) => bank,
-                None => return Err(Error::invalid_params("failed to rollback block")),
-            };
+        if config.rollback > 0 {
+            let r_bank_forks = self.bank_forks.read().unwrap();
+            for _ in 0..config.rollback {
+                bank = match r_bank_forks.get(bank.parent_slot()).or_else(|| {
+                    r_bank_forks
+                        .banks_frozen
+                        .get(&bank.parent_slot())
+                        .map(Clone::clone)
+                }) {
+                    Some(bank) => bank,
+                    None => return Err(Error::invalid_params("failed to rollback block")),
+                };
+            }
         }
         let blockhash = bank.last_blockhash();
         let last_valid_block_height = bank
