@@ -211,7 +211,7 @@ pub enum ScanError {
     Aborted(String),
 }
 
-enum ScanTypes<R: RangeBounds<Pubkey>> {
+pub(crate) enum ScanTypes<R: RangeBounds<Pubkey>> {
     Unindexed(Option<R>),
     Indexed(IndexKey),
 }
@@ -456,7 +456,7 @@ impl<T: IndexValue, U: DiskIndexValue + From<T> + Into<T>> AccountsIndex<T, U> {
         ongoing_scan_roots.keys().next().cloned()
     }
 
-    fn do_checked_scan_accounts<F, R>(
+    pub(crate) fn do_checked_scan_accounts<F, R>(
         &self,
         metric_name: &'static str,
         ancestors: &Ancestors,

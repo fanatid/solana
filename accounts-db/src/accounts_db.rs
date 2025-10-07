@@ -53,8 +53,9 @@ use {
         accounts_index::{
             in_mem_accounts_index::StartupStats, AccountSecondaryIndexes, AccountsIndex,
             AccountsIndexConfig, AccountsIndexRootsStats, AccountsIndexScanResult, DiskIndexValue,
-            IndexKey, IndexValue, IsCached, RefCount, ScanConfig, ScanFilter, ScanResult, SlotList,
-            UpsertReclaim, ACCOUNTS_INDEX_CONFIG_FOR_BENCHMARKS, ACCOUNTS_INDEX_CONFIG_FOR_TESTING,
+            IndexKey, IndexValue, IsCached, RefCount, ScanConfig, ScanFilter, ScanOrder,
+            ScanResult, ScanTypes, SlotList, UpsertReclaim, ACCOUNTS_INDEX_CONFIG_FOR_BENCHMARKS,
+            ACCOUNTS_INDEX_CONFIG_FOR_TESTING,
         },
         accounts_index_storage::Startup,
         accounts_partition::RentPayingAccountsByPartition,
@@ -4342,6 +4343,39 @@ impl AccountsDb {
                 maybe_clean();
             }
         }
+    }
+
+    pub fn ordered_range_scan_accounts<F, R>(
+        &self,
+        ancestors: &Ancestors,
+        bank_id: BankId,
+        mut scan_func: F,
+        scan_range: R,
+        abort: Option<Arc<AtomicBool>>,
+    ) -> ScanResult<()>
+    where
+        F: FnMut(&Pubkey, AccountSharedData),
+        R: RangeBounds<Pubkey> + std::fmt::Debug,
+    {
+        // Pass "" not to log metrics, so RPC doesn't get spammy
+        self.accounts_index.do_checked_scan_accounts(
+            "",
+            ancestors,
+            bank_id,
+            |pubkey, (account_info, slot)| {
+                if let Some((pubkey, data)) = self
+                    .get_account_accessor(slot, pubkey, &account_info.storage_location())
+                    .get_loaded_account(|loaded_account| (pubkey, loaded_account.take_account()))
+                {
+                    scan_func(pubkey, data)
+                }
+            },
+            ScanTypes::Unindexed(Some(scan_range)),
+            &ScanConfig {
+                abort,
+                scan_order: ScanOrder::Sorted,
+            },
+        )
     }
 
     pub fn scan_accounts<F>(

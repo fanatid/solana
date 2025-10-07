@@ -9766,6 +9766,7 @@ dependencies = [
  "jsonrpc-pubsub",
  "libc",
  "log",
+ "prost",
  "rayon",
  "regex",
  "serde",
@@ -9851,7 +9852,10 @@ dependencies = [
  "test-case",
  "thiserror 2.0.12",
  "tokio",
+ "tokio-stream",
  "tokio-util 0.7.15",
+ "url 2.5.4",
+ "zstd",
 ]
 
 [[package]]

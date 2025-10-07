@@ -57,6 +57,7 @@ use {
     solana_rpc::{
         rpc::{JsonRpcConfig, RpcBigtableConfig},
         rpc_pubsub_service::PubSubConfig,
+        rpc_service::GetAccountsStateConfig,
     },
     solana_runtime::{
         runtime_config::RuntimeConfig,
@@ -777,6 +778,9 @@ pub fn execute(
         wen_restart_coordinator: value_t!(matches, "wen_restart_coordinator", Pubkey).ok(),
         retransmit_xdp,
         use_tpu_client_next: !matches.is_present("use_connection_cache"),
+        get_accounts_state_config: matches
+            .is_present("enable_get_accounts_state")
+            .then(GetAccountsStateConfig::default),
         ..ValidatorConfig::default()
     };
 

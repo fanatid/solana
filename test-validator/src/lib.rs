@@ -41,7 +41,9 @@ use {
     solana_net_utils::PortRange,
     solana_pubkey::Pubkey,
     solana_rent::Rent,
-    solana_rpc::{rpc::JsonRpcConfig, rpc_pubsub_service::PubSubConfig},
+    solana_rpc::{
+        rpc::JsonRpcConfig, rpc_pubsub_service::PubSubConfig, rpc_service::GetAccountsStateConfig,
+    },
     solana_rpc_client::{nonblocking, rpc_client::RpcClient},
     solana_rpc_client_api::request::MAX_MULTIPLE_ACCOUNTS,
     solana_runtime::{
@@ -1068,6 +1070,7 @@ impl TestValidator {
                 incremental_snapshot_archives_dir: ledger_path.to_path_buf(),
                 ..SnapshotConfig::default()
             },
+            get_accounts_state_config: Some(GetAccountsStateConfig),
             warp_slot: config.warp_slot,
             validator_exit: config.validator_exit.clone(),
             max_ledger_shreds: config.max_ledger_shreds,
