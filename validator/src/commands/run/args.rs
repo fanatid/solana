@@ -1424,6 +1424,12 @@ pub fn add_args<'a>(app: App<'a, 'a>, default_args: &'a DefaultArgs) -> App<'a, 
                  set,tpu-client-next is used by default.",
             ),
     )
+    .arg(
+        Arg::with_name("enable_get_accounts_state")
+            .long("enable-get-accounts-state")
+            .takes_value(false)
+            .help("Enable endpoints to fetch full accounts state"),
+    )
     .args(&pub_sub_config::args(/*test_validator:*/ false))
     .args(&json_rpc_config::args())
     .args(&rpc_bigtable_config::args())
