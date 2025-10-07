@@ -15,9 +15,12 @@ use {
         hyper, AccessControlAllowOrigin, CloseHandle, DomainsValidation, RequestMiddleware,
         RequestMiddlewareAction, ServerBuilder,
     },
+    prost::encoding::encode_varint,
     regex::Regex,
+    solana_account::ReadableAccount,
     solana_cli_output::display::build_balance_message,
     solana_client::connection_cache::{ConnectionCache, Protocol},
+    solana_clock::Slot,
     solana_genesis_config::DEFAULT_GENESIS_DOWNLOAD_PATH,
     solana_gossip::cluster_info::ClusterInfo,
     solana_hash::Hash,
@@ -30,6 +33,7 @@ use {
     solana_metrics::inc_new_counter_info,
     solana_perf::thread::renice_this_thread,
     solana_poh::poh_recorder::PohRecorder,
+    solana_pubkey::{Pubkey, PUBKEY_BYTES},
     solana_quic_definitions::NotifyKeyUpdate,
     solana_runtime::{
         bank::Bank,
@@ -48,9 +52,12 @@ use {
     solana_storage_bigtable::CredentialType,
     solana_validator_exit::Exit,
     std::{
+        io::{self, Write},
         net::{SocketAddr, UdpSocket},
+        ops::RangeInclusive,
         path::{Path, PathBuf},
         pin::Pin,
+        str::FromStr,
         sync::{
             atomic::{AtomicBool, AtomicU64, Ordering},
             Arc, RwLock,
@@ -59,9 +66,13 @@ use {
         thread::{self, Builder, JoinHandle},
         time::{Duration, Instant},
     },
-    tokio::runtime::{Builder as TokioBuilder, Handle as RuntimeHandle, Runtime as TokioRuntime},
+    tokio::{
+        runtime::{Builder as TokioBuilder, Handle as RuntimeHandle, Runtime as TokioRuntime},
+        sync::mpsc,
+    },
+    tokio_stream::wrappers::ReceiverStream,
     tokio_util::{
-        bytes::Bytes,
+        bytes::{BufMut, Bytes, BytesMut},
         codec::{BytesCodec, FramedRead},
         sync::CancellationToken,
     },
@@ -125,22 +136,28 @@ pub struct JsonRpcService {
 }
 
 struct RpcRequestMiddleware {
+    runtime: Arc<TokioRuntime>,
     ledger_path: PathBuf,
     full_snapshot_archive_path_regex: Regex,
     incremental_snapshot_archive_path_regex: Regex,
     snapshot_config: Option<SnapshotConfig>,
+    get_accounts_state_config: Option<GetAccountsStateConfig>,
+    get_accounts_state_regex: Regex,
     bank_forks: Arc<RwLock<BankForks>>,
     health: Arc<RpcHealth>,
 }
 
 impl RpcRequestMiddleware {
     pub fn new(
+        runtime: Arc<TokioRuntime>,
         ledger_path: PathBuf,
         snapshot_config: Option<SnapshotConfig>,
+        get_accounts_state_config: Option<GetAccountsStateConfig>,
         bank_forks: Arc<RwLock<BankForks>>,
         health: Arc<RpcHealth>,
     ) -> Self {
         Self {
+            runtime,
             ledger_path,
             full_snapshot_archive_path_regex: Regex::new(
                 snapshot_utils::FULL_SNAPSHOT_ARCHIVE_FILENAME_REGEX,
@@ -151,6 +168,11 @@ impl RpcRequestMiddleware {
             )
             .unwrap(),
             snapshot_config,
+            get_accounts_state_config,
+            get_accounts_state_regex: Regex::new(
+                r"^/get-account-state/(?P<slot>[[:digit:]]+)(?:\.(?P<ext>zst))?$",
+            )
+            .unwrap(),
             bank_forks,
             health,
         }
@@ -171,11 +193,165 @@ impl RpcRequestMiddleware {
             .unwrap()
     }
 
+    fn bad_request(body: impl Into<hyper::Body>) -> hyper::Response<hyper::Body> {
+        hyper::Response::builder()
+            .status(hyper::StatusCode::BAD_REQUEST)
+            .body(body.into())
+            .unwrap()
+    }
+
     fn internal_server_error() -> hyper::Response<hyper::Body> {
         hyper::Response::builder()
             .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
             .body(hyper::Body::empty())
             .unwrap()
+    }
+
+    fn try_get_accounts_state(
+        &self,
+        uri: &hyper::Uri,
+        _config: GetAccountsStateConfig,
+    ) -> Option<hyper::Response<hyper::Body>> {
+        if let Some((Some(slot), ext)) =
+            self.get_accounts_state_regex
+                .captures(uri.path())
+                .map(|captures| {
+                    (
+                        captures
+                            .name("slot")
+                            .and_then(|m| Slot::from_str(m.as_str()).ok()),
+                        captures.name("ext").map(|m| m.as_str()),
+                    )
+                })
+        {
+            let mut start = None;
+            let mut end = None;
+            for (key, value) in
+                url::form_urlencoded::parse(uri.query().unwrap_or_default().as_bytes())
+            {
+                match key.as_ref() {
+                    "start" => match Pubkey::from_str(&value) {
+                        Ok(value) => start = Some(value),
+                        Err(_error) => {
+                            return Some(Self::bad_request(
+                                "failed to parse `start` from {value:?}",
+                            ))
+                        }
+                    },
+                    "end" => match Pubkey::from_str(&value) {
+                        Ok(value) => end = Some(value),
+                        Err(_error) => {
+                            return Some(Self::bad_request("failed to parse `end` from {value:?}"))
+                        }
+                    },
+                    _ => {}
+                }
+            }
+            let scan_range = RangeInclusive::new(
+                start.unwrap_or(Pubkey::from([0x00; PUBKEY_BYTES])),
+                end.unwrap_or(Pubkey::from([0xFF; PUBKEY_BYTES])),
+            );
+
+            let r_bank_forks = self.bank_forks.read().unwrap();
+            let Some(bank) = r_bank_forks.get(slot) else {
+                return Some(Self::bad_request(format!(
+                    "failed to get bank for slot {slot}"
+                )));
+            };
+
+            info!("requested state for slot#{slot} in range {scan_range:?}");
+
+            let mib = 1024 * 1024;
+            let (tx, mut rx_plain) = mpsc::channel::<Result<Bytes, &'static str>>(1024); // each 1-10 MiB
+            self.runtime.spawn_blocking(move || {
+                let abort = Arc::new(AtomicBool::new(false));
+                let scan_func_abort = Arc::clone(&abort);
+                let mut buf = BytesMut::with_capacity(16 * mib);
+                if let Err(error) = bank.rc.accounts.accounts_db.ordered_range_scan_accounts(
+                    &bank.ancestors,
+                    bank.bank_id(),
+                    |pubkey, data| {
+                        buf.extend_from_slice(pubkey.as_ref());
+                        encode_varint(data.lamports(), &mut buf);
+                        encode_varint(data.data().len() as u64, &mut buf);
+                        buf.extend_from_slice(data.data());
+                        buf.extend_from_slice(data.owner().as_ref());
+                        buf.put_u8(if data.executable() { 1 } else { 0 });
+                        encode_varint(data.rent_epoch(), &mut buf);
+
+                        if buf.len() > mib {
+                            let buf = buf.split().freeze();
+                            if tx.blocking_send(Ok(buf)).is_err() {
+                                scan_func_abort.store(true, Ordering::SeqCst);
+                            }
+                        }
+                    },
+                    scan_range,
+                    Some(abort),
+                ) {
+                    error!("failed to scan accounts: {error:?}");
+                }
+                let _ = tx.blocking_send(Ok(buf.freeze()));
+            });
+
+            let mut response_builder = hyper::Response::builder();
+            let rx = match ext {
+                Some("zst") => {
+                    response_builder =
+                        response_builder.header(hyper::header::CONTENT_ENCODING, "zstd");
+
+                    struct BytesMutWriter<'a>(&'a mut BytesMut);
+                    impl Write for BytesMutWriter<'_> {
+                        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                            self.0.extend_from_slice(buf);
+                            Ok(buf.len())
+                        }
+
+                        fn flush(&mut self) -> io::Result<()> {
+                            Ok(())
+                        }
+                    }
+
+                    let (tx, rx) = mpsc::channel::<Result<Bytes, &'static str>>(1024); // each 1-10 MiB
+                    self.runtime.spawn_blocking(move || {
+                        let mut buf = BytesMut::with_capacity(16 * mib);
+                        let mut encoder = zstd::Encoder::new(BytesMutWriter(&mut buf), 3)
+                            .expect("failed to create encoder");
+                        while let Some(bytes) = rx_plain.blocking_recv() {
+                            if encoder.write_all(&bytes.expect("unreachable")).is_err() {
+                                let _ = tx.blocking_send(Err("failed to compress data"));
+                                return;
+                            }
+
+                            let buf = &mut encoder.get_mut().0;
+                            if buf.len() > mib {
+                                let buf = buf.split().freeze();
+                                if tx.blocking_send(Ok(buf)).is_err() {
+                                    return;
+                                }
+                            }
+                        }
+                        let _ = tx.blocking_send(if encoder.finish().is_ok() {
+                            Ok(buf.freeze())
+                        } else {
+                            Err("failed to finish compression")
+                        });
+                    });
+                    rx
+                }
+                Some(_) => todo!(),
+                None => rx_plain,
+            };
+
+            let response = response_builder
+                .header(hyper::header::CONTENT_TYPE, "application/octet-stream")
+                .body(hyper::Body::wrap_stream(ReceiverStream::new(rx)))
+                .unwrap();
+
+            Some(response)
+        } else {
+            None
+        }
     }
 
     fn strip_leading_slash(path: &str) -> Option<&str> {
@@ -388,6 +564,12 @@ impl RequestMiddleware for RpcRequestMiddleware {
             }
         }
 
+        if let Some(config) = self.get_accounts_state_config {
+            if let Some(response) = self.try_get_accounts_state(request.uri(), config) {
+                return response.into();
+            }
+        }
+
         if let Some(path) = match_supply_path(request.uri().path()) {
             process_rest(&self.bank_forks, path)
         } else if self.is_file_get_path(request.uri().path()) {
@@ -466,6 +648,9 @@ fn process_rest(bank_forks: &Arc<RwLock<BankForks>>, path: &str) -> RequestMiddl
     }
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+pub struct GetAccountsStateConfig;
+
 /// [`JsonRpcServiceConfig`] is a helper structure that simplifies the creation
 /// of a [`JsonRpcService`] with a target TPU client specified by
 /// `client_option`.
@@ -473,6 +658,7 @@ pub struct JsonRpcServiceConfig<'a> {
     pub rpc_addr: SocketAddr,
     pub rpc_config: JsonRpcConfig,
     pub snapshot_config: Option<SnapshotConfig>,
+    pub get_accounts_state_config: Option<GetAccountsStateConfig>,
     pub bank_forks: Arc<RwLock<BankForks>>,
     pub block_commitment_cache: Arc<RwLock<BlockCommitmentCache>>,
     pub blockstore: Arc<Blockstore>,
@@ -536,6 +722,7 @@ impl JsonRpcService {
                     config.rpc_addr,
                     config.rpc_config,
                     config.snapshot_config,
+                    config.get_accounts_state_config,
                     config.bank_forks,
                     config.block_commitment_cache,
                     config.blockstore,
@@ -586,6 +773,7 @@ impl JsonRpcService {
                     config.rpc_addr,
                     config.rpc_config.clone(),
                     config.snapshot_config,
+                    config.get_accounts_state_config,
                     config.bank_forks.clone(),
                     config.block_commitment_cache.clone(),
                     config.blockstore.clone(),
@@ -615,6 +803,7 @@ impl JsonRpcService {
         rpc_addr: SocketAddr,
         config: JsonRpcConfig,
         snapshot_config: Option<SnapshotConfig>,
+        get_accounts_state_config: Option<GetAccountsStateConfig>,
         bank_forks: Arc<RwLock<BankForks>>,
         block_commitment_cache: Arc<RwLock<BlockCommitmentCache>>,
         blockstore: Arc<Blockstore>,
@@ -663,6 +852,7 @@ impl JsonRpcService {
             rpc_addr,
             config,
             snapshot_config,
+            get_accounts_state_config,
             bank_forks,
             block_commitment_cache,
             blockstore,
@@ -697,6 +887,7 @@ impl JsonRpcService {
         rpc_addr: SocketAddr,
         config: JsonRpcConfig,
         snapshot_config: Option<SnapshotConfig>,
+        get_accounts_state_config: Option<GetAccountsStateConfig>,
         bank_forks: Arc<RwLock<BankForks>>,
         block_commitment_cache: Arc<RwLock<BlockCommitmentCache>>,
         blockstore: Arc<Blockstore>,
@@ -839,8 +1030,10 @@ impl JsonRpcService {
                 }
 
                 let request_middleware = RpcRequestMiddleware::new(
+                    Arc::clone(&runtime),
                     ledger_path,
                     snapshot_config,
+                    get_accounts_state_config,
                     bank_forks.clone(),
                     health.clone(),
                 );
@@ -1000,6 +1193,7 @@ mod tests {
             rpc_addr,
             JsonRpcConfig::default(),
             None,
+            None,
             bank_forks,
             block_commitment_cache,
             blockstore,
@@ -1112,14 +1306,18 @@ mod tests {
 
         let bank_forks = create_bank_forks();
         let rrm = RpcRequestMiddleware::new(
+            Arc::new(Runtime::new().unwrap()),
             ledger_path.path().to_path_buf(),
+            None,
             None,
             bank_forks.clone(),
             health.clone(),
         );
         let rrm_with_snapshot_config = RpcRequestMiddleware::new(
+            Arc::new(Runtime::new().unwrap()),
             ledger_path.path().to_path_buf(),
             Some(SnapshotConfig::default()),
+            None,
             bank_forks,
             health,
         );
@@ -1231,7 +1429,9 @@ mod tests {
         let optimistically_confirmed_bank =
             OptimisticallyConfirmedBank::locked_from_bank_forks_root(&bank_forks);
         let rrm = RpcRequestMiddleware::new(
+            Arc::new(Runtime::new().unwrap()),
             ledger_path.path().to_path_buf(),
+            None,
             None,
             bank_forks,
             RpcHealth::stub(optimistically_confirmed_bank, blockstore),
