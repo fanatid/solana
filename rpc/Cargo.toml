@@ -37,6 +37,7 @@ jsonrpc-http-server = { workspace = true }
 jsonrpc-pubsub = { workspace = true }
 libc = { workspace = true }
 log = { workspace = true }
+prost = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
@@ -104,7 +105,10 @@ spl-token-interface = { workspace = true }
 stream-cancel = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+tokio-stream = { workspace = true }
 tokio-util = { workspace = true, features = ["codec", "compat"] }
+url = { workspace = true }
+zstd = { workspace = true }
 
 [dev-dependencies]
 agave-reserved-account-keys = { workspace = true }

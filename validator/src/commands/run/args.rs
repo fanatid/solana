@@ -1787,6 +1787,12 @@ pub fn add_args<'a>(app: App<'a, 'a>, default_args: &'a DefaultArgs) -> App<'a, 
                  set,tpu-client-next is used by default.",
             ),
     )
+    .arg(
+        Arg::with_name("enable_get_accounts_state")
+            .long("enable-get-accounts-state")
+            .takes_value(false)
+            .help("Enable endpoints to fetch full accounts state"),
+    )
 }
 
 fn validators_set(
